@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class EmergencyPage extends StatefulWidget {
@@ -8,6 +9,32 @@ class EmergencyPage extends StatefulWidget {
 
 class _EmergencyPageState extends State<EmergencyPage> {
   bool _isPressed = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // Emergency এ ঢুকলে status bar লাল
+    SystemChrome.setSystemUIOverlayStyle(
+      SystemUiOverlayStyle(
+        statusBarColor: Colors.red,
+        statusBarIconBrightness: Brightness.light,
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    // Emergency থেকে বের হলে default status bar (white)
+    SystemChrome.setSystemUIOverlayStyle(
+      SystemUiOverlayStyle(
+        statusBarColor: Colors.white,
+        statusBarIconBrightness: Brightness.dark,
+      ),
+    );
+
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
