@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:dio/dio.dart';
+import 'package:geolocator/geolocator.dart';
 
 class EarthquakePage extends StatefulWidget {
   @override
@@ -39,7 +41,7 @@ class Earthquake {
       depth: (json["depth"] ?? 0.0).toString(),
       date: json["quake_time"]?.toString() ?? "",
       details: json["url"] ?? "",
-      type: FilterType.Upcoming, // আপনি চাইলে API অনুযায়ী adjust করতে পারেন
+      type: FilterType.Upcoming,
     );
   }
 
@@ -52,29 +54,62 @@ class _EarthquakePageState extends State<EarthquakePage> {
   List<Earthquake> allLocations = [];
   Earthquake? selectedLocation;
   bool isLoading = true;
+  Position? userPosition;
 
   @override
   void initState() {
     super.initState();
-    fetchEarthquakes();
+    getUserLocation();
   }
 
+  // User location fetch
+  Future<void> getUserLocation() async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      print("Location services are disabled.");
+      return;
+    }
+
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) return;
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      print("Location permissions are permanently denied");
+      return;
+    }
+
+    Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high);
+    setState(() {
+      userPosition = position;
+    });
+
+    print("User Latitude: ${position.latitude}, Longitude: ${position.longitude}");
+
+    fetchEarthquakes(); // Location নিয়ে API call
+  }
+
+  // Fetch earthquake API
   Future<void> fetchEarthquakes() async {
-    const String url = "http://192.168.0.106:8000/api/earthquakes";
+    if (userPosition == null) return;
+
+    final String url =
+        "http://192.168.0.102:8000/api/earthquakes?lat=${userPosition!.latitude}&lng=${userPosition!.longitude}";
 
     try {
       final response = await Dio().get(url);
       final List data = response.data['data'];
 
-      // Debug print
-      print("Fetched ${data.length} earthquakes from API");
-
       setState(() {
         allLocations = data.map((e) => Earthquake.fromJson(e)).toList();
-        selectedLocation =
-        allLocations.isNotEmpty ? allLocations.first : null;
+        selectedLocation = allLocations.isNotEmpty ? allLocations.first : null;
         isLoading = false;
       });
+
+      print("Fetched ${allLocations.length} earthquakes from API");
     } catch (e) {
       print("Failed to fetch data: $e");
       setState(() {
@@ -90,17 +125,30 @@ class _EarthquakePageState extends State<EarthquakePage> {
 
   @override
   Widget build(BuildContext context) {
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
+      ),
+    );
+
     return Scaffold(
       body: isLoading
-          ? Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator())
           : Stack(
         children: [
+          // Google Map
           GoogleMap(
             initialCameraPosition: CameraPosition(
-              target: selectedLocation?.position ?? LatLng(8.25, 116.0),
+              target: selectedLocation?.position ??
+                  LatLng(userPosition?.latitude ?? 8.25,
+                      userPosition?.longitude ?? 116.0),
               zoom: 6.5,
             ),
             onMapCreated: (controller) => mapController = controller,
+            myLocationEnabled: true,
+            myLocationButtonEnabled: true,
             markers: quakeLocations
                 .map((quake) => Marker(
               markerId: MarkerId(quake.title),
@@ -133,17 +181,17 @@ class _EarthquakePageState extends State<EarthquakePage> {
                             : null;
                       });
                     }),
-                SizedBox(width: 8),
-                _filterButton(
-                    "Recent", selectedFilter == FilterType.Recent, () {
-                  setState(() {
-                    selectedFilter = FilterType.Recent;
-                    selectedLocation = quakeLocations.isNotEmpty
-                        ? quakeLocations.first
-                        : null;
-                  });
-                }),
-                SizedBox(width: 8),
+                const SizedBox(width: 8),
+                _filterButton("Recent", selectedFilter == FilterType.Recent,
+                        () {
+                      setState(() {
+                        selectedFilter = FilterType.Recent;
+                        selectedLocation = quakeLocations.isNotEmpty
+                            ? quakeLocations.first
+                            : null;
+                      });
+                    }),
+                const SizedBox(width: 8),
                 _filterButton("List", selectedFilter == FilterType.List, () {
                   setState(() {
                     selectedFilter = FilterType.List;
@@ -167,7 +215,7 @@ class _EarthquakePageState extends State<EarthquakePage> {
             ),
           ),
 
-          // Bottom Card
+          // Bottom Info Card
           if (selectedLocation != null)
             Positioned(
               left: 0,
@@ -184,13 +232,14 @@ class _EarthquakePageState extends State<EarthquakePage> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: EdgeInsets.symmetric(horizontal: 22, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
         decoration: BoxDecoration(
           color: active ? Colors.white : Colors.white70,
           borderRadius: BorderRadius.circular(25),
           boxShadow: [
             if (active)
-              BoxShadow(color: Colors.black26, blurRadius: 5, offset: Offset(0, 3)),
+              const BoxShadow(
+                  color: Colors.black26, blurRadius: 5, offset: Offset(0, 3)),
           ],
         ),
         child: Text(
@@ -205,8 +254,8 @@ class _EarthquakePageState extends State<EarthquakePage> {
 
   Widget _bottomInfoCard(Earthquake quake) {
     return Container(
-      padding: EdgeInsets.all(20),
-      decoration: BoxDecoration(
+      padding: const EdgeInsets.all(20),
+      decoration: const BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
         boxShadow: [
@@ -224,14 +273,14 @@ class _EarthquakePageState extends State<EarthquakePage> {
               _infoBox(Icons.arrow_downward, quake.depth),
             ],
           ),
-          SizedBox(height: 20),
+          const SizedBox(height: 20),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(quake.title,
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              SizedBox(height: 10),
-              Text(quake.details, style: TextStyle(fontSize: 15)),
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 10),
+              Text(quake.details, style: const TextStyle(fontSize: 15)),
             ],
           ),
         ],
@@ -243,8 +292,8 @@ class _EarthquakePageState extends State<EarthquakePage> {
     return Column(
       children: [
         Icon(icon, size: 28, color: Colors.blue),
-        SizedBox(height: 20),
-        Text(text, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 20),
+        Text(text, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
       ],
     );
   }
@@ -259,17 +308,17 @@ class EarthquakeListPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("Earthquake List")),
+      appBar: AppBar(title: const Text("Earthquake List")),
       body: ListView.builder(
         itemCount: locations.length,
         itemBuilder: (context, index) {
           final loc = locations[index];
           return Card(
-            margin: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             child: ListTile(
               title: Text(loc.title),
               subtitle: Text("Magnitude: ${loc.magnitude} | Depth: ${loc.depth}"),
-              trailing: Icon(Icons.arrow_forward),
+              trailing: const Icon(Icons.arrow_forward),
               onTap: () {
                 print("Open URL: ${loc.details}");
               },
